@@ -1,0 +1,103 @@
+# for speech-to-text
+import speech_recognition as sr
+# for text-to-speech
+from gtts import gTTS
+# for language model
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+import os
+import time
+import datetime
+import random
+
+# Building the AI
+class ChatBot:
+    def __init__(self, name):
+        print(f"----- Starting up {name} -----")
+        self.name = name
+        self.text = ""
+
+    def speech_to_text(self):
+        recognizer = sr.Recognizer()
+        with sr.Microphone() as mic:
+            print("Listening...")
+            try:
+                audio = recognizer.listen(mic, timeout=5)  # Add timeout to prevent infinite wait
+                self.text = recognizer.recognize_google(audio).lower()
+                print("Me  --> ", self.text)
+            except sr.UnknownValueError:
+                print("Me  -->  ERROR: Could not understand audio")
+                self.text = "ERROR"
+            except sr.RequestError:
+                print("Me  -->  ERROR: Speech recognition service unavailable")
+                self.text = "ERROR"
+
+    @staticmethod
+    def text_to_speech(text):
+        print(f"{text}")
+        speaker = gTTS(text=text, lang="en", slow=False)
+        speaker.save("response.mp3")
+
+        # Play audio based on OS
+        if os.name == "posix":  # MacOS/Linux
+            os.system("afplay response.mp3")
+        else:  # Windows
+            os.system("start response.mp3")
+        
+        time.sleep(2)  # Reduce sleep time to avoid unnecessary delays
+        os.remove("response.mp3")
+
+    def wake_up(self, text):
+        return self.name.lower() in text.lower()
+
+    @staticmethod
+    def action_time():
+        return datetime.datetime.now().strftime('%H:%M')
+
+# Running the AI
+if __name__ == "__main__":
+    ai = ChatBot(name="Abhishank")  # Your name added here
+    
+    # Load Model and Tokenizer Correctly
+    model_name = "microsoft/DialoGPT-medium"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
+
+    running = True
+    while running:
+        ai.speech_to_text()
+
+        if ai.text == "ERROR":
+            continue  # Retry listening instead of responding with "ERROR"
+
+        ## Wake-up call
+        if ai.wake_up(ai.text):
+            response = "Hello, I am Abhishank the AI. What can I do for you?"
+        
+        ## Time inquiry
+        elif "time" in ai.text:
+            response = f"The current time is {ai.action_time()}."
+
+        ## Thank-you responses
+        elif any(word in ai.text for word in ["thank", "thanks"]):
+            response = random.choice(["You're welcome!", "Anytime!", "No problem!", "Cool!", "I'm here if you need me!", "Mention not!"])
+
+        ## Exit command
+        elif any(word in ai.text for word in ["exit", "close"]):
+            response = random.choice(["Tata", "Have a good day!", "Bye", "Goodbye", "Hope to meet soon!", "Peace out!"])
+            running = False
+
+        ## Conversational AI response
+        else:
+            inputs = tokenizer.encode(ai.text, return_tensors="pt")
+            chat_response = model.generate(
+                inputs, max_length=100, pad_token_id=50256,
+                top_p=0.9, top_k=50  # Enables better conversation flow
+            )
+            response = tokenizer.decode(chat_response[0], skip_special_tokens=True)
+
+        ai.text_to_speech(response)
+
+    print("----- Closing down Abhishank -----")
